@@ -1,13 +1,28 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import TopBanner from "@/components/TopBanner";
+import HeroSection from "@/components/HeroSection";
+import ToolsGrid from "@/components/ToolsGrid";
+import CreditPackages from "@/components/CreditPackages";
+import PremiumProducts from "@/components/PremiumProducts";
+import ToolInterface from "@/components/ToolInterface";
+import { Helmet } from "react-helmet-async";
 
 const Index = () => {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
+    <>
+      <Helmet>
+        <title>KYC Fixer - AI-Powered Photo & ID Editing Tools</title>
+        <meta name="description" content="Enhance photos, generate videos, and edit text in images with AI. Professional tools for document verification and photo editing." />
+      </Helmet>
+      
+      <div className="min-h-screen bg-background">
+        <TopBanner />
+        <HeroSection />
+        <ToolsGrid />
+        <CreditPackages />
+        <PremiumProducts />
+        <ToolInterface />
       </div>
-    </div>
+    </>
   );
 };
 
