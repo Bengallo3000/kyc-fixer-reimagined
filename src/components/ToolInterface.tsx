@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Upload, Sparkles, Video, Type, Users, QrCode, FileText, FileCheck, Shield, Loader2, CheckCircle, AlertCircle } from "lucide-react";
+import { Upload, Sparkles, Video, Type, Users, QrCode, FileText, FileCheck, Shield, Loader2, CheckCircle, AlertCircle, Download } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -26,6 +26,7 @@ const ToolInterface = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [resultImage, setResultImage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("selfie");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [secondPreviewUrl, setSecondPreviewUrl] = useState<string | null>(null);
@@ -98,6 +99,7 @@ const ToolInterface = () => {
 
     setIsProcessing(true);
     setAnalysisResult(null);
+    setResultImage(null);
 
     try {
       const imageBase64 = await fileToBase64(selectedFile);
@@ -117,6 +119,9 @@ const ToolInterface = () => {
 
       if (data.success) {
         setAnalysisResult(data.analysis);
+        if (data.resultImage) {
+          setResultImage(data.resultImage);
+        }
         toast({
           title: activeTab === "faceswap" ? "Face Swap Complete" : "Analysis Complete",
           description: activeTab === "faceswap" 
@@ -142,6 +147,7 @@ const ToolInterface = () => {
     setSelectedFile(null);
     setSecondFile(null);
     setAnalysisResult(null);
+    setResultImage(null);
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl);
       setPreviewUrl(null);
@@ -152,32 +158,70 @@ const ToolInterface = () => {
     }
   };
 
+  const downloadResultImage = () => {
+    if (!resultImage) return;
+    const link = document.createElement('a');
+    link.href = resultImage;
+    link.download = 'face-swap-result.png';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const isFaceSwap = activeTab === "faceswap";
   const canProcess = isFaceSwap ? (selectedFile && secondFile) : selectedFile;
 
   const renderAnalysisResult = () => {
-    if (!analysisResult) return null;
+    if (!analysisResult && !resultImage) return null;
 
     return (
-      <div className="mt-6 p-6 bg-secondary/30 rounded-xl border border-border">
-        <div className="flex items-center gap-2 mb-4">
-          <CheckCircle className="w-5 h-5 text-primary" />
-          <h4 className="font-semibold">AI Analysis Results</h4>
-        </div>
-        <div className="space-y-3">
-          {Object.entries(analysisResult).map(([key, value]) => (
-            <div key={key} className="flex flex-col gap-1">
-              <span className="text-sm font-medium text-primary capitalize">
-                {key.replace(/([A-Z])/g, ' $1').trim()}
-              </span>
-              <span className="text-sm text-muted-foreground">
-                {typeof value === 'object' 
-                  ? JSON.stringify(value, null, 2) 
-                  : String(value)}
-              </span>
+      <div className="mt-6 space-y-6">
+        {/* Face Swap Result Image */}
+        {resultImage && isFaceSwap && (
+          <div className="p-6 bg-gradient-to-br from-primary/10 to-secondary/30 rounded-xl border border-primary/30">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-primary" />
+                <h4 className="font-semibold">Face Swap Result</h4>
+              </div>
+              <Button variant="outline" size="sm" onClick={downloadResultImage}>
+                <Download className="w-4 h-4 mr-2" />
+                Download
+              </Button>
             </div>
-          ))}
-        </div>
+            <div className="rounded-lg overflow-hidden bg-background/50 p-4">
+              <img 
+                src={resultImage} 
+                alt="Face swap result" 
+                className="max-h-96 mx-auto rounded-lg object-contain shadow-lg"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Analysis Details */}
+        {analysisResult && (
+          <div className="p-6 bg-secondary/30 rounded-xl border border-border">
+            <div className="flex items-center gap-2 mb-4">
+              <CheckCircle className="w-5 h-5 text-primary" />
+              <h4 className="font-semibold">{isFaceSwap ? "Swap Details" : "AI Analysis Results"}</h4>
+            </div>
+            <div className="space-y-3">
+              {Object.entries(analysisResult).map(([key, value]) => (
+                <div key={key} className="flex flex-col gap-1">
+                  <span className="text-sm font-medium text-primary capitalize">
+                    {key.replace(/([A-Z])/g, ' $1').trim()}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    {typeof value === 'object' 
+                      ? JSON.stringify(value, null, 2) 
+                      : String(value)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   };
