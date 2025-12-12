@@ -33,14 +33,15 @@ Respond in JSON format with keys: subjects, motionAreas, effects, duration, qual
 
 Respond in JSON format with keys: documentType, textFields, orientation, ocrQuality, authenticityMarkers`,
 
-  faceswap: `Analyze this face image for face swap compatibility:
-1. Face detection and positioning
-2. Face landmarks (eyes, nose, mouth positions)
-3. Lighting direction
-4. Face angle estimation
-5. Swap quality prediction score
+  faceswap: `You are an AI face swap expert. Analyze these two images and perform a face swap analysis:
+1. Detect faces in both images
+2. Identify facial landmarks in both faces
+3. Analyze lighting and angle compatibility
+4. Describe how the face from the first image would look swapped onto the second image
+5. Provide a swap quality prediction score (0-100)
+6. Suggest adjustments needed for a better swap
 
-Respond in JSON format with keys: faceDetected, landmarks, lighting, angle, swapScore`,
+Respond in JSON format with keys: face1Detected, face2Detected, landmarks1, landmarks2, compatibility, swapDescription, qualityScore, suggestions`,
 
   barcode: `Analyze this image for barcode/QR code content:
 1. Barcode type detection (QR, Code128, EAN, etc.)
@@ -85,7 +86,7 @@ serve(async (req) => {
   }
 
   try {
-    const { imageBase64, toolType } = await req.json();
+    const { imageBase64, secondImageBase64, toolType } = await req.json();
 
     if (!imageBase64) {
       return new Response(
@@ -107,6 +108,39 @@ serve(async (req) => {
     
     console.log(`Processing image with tool: ${toolType}`);
 
+    // Build the content array for the AI request
+    const userContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
+    
+    if (toolType === 'faceswap' && secondImageBase64) {
+      userContent.push({
+        type: 'text',
+        text: 'Analyze these two images for face swap. The first image contains the source face, and the second image contains the target face. Describe how swapping the faces would look.'
+      });
+      userContent.push({
+        type: 'image_url',
+        image_url: {
+          url: imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`
+        }
+      });
+      userContent.push({
+        type: 'image_url',
+        image_url: {
+          url: secondImageBase64.startsWith('data:') ? secondImageBase64 : `data:image/jpeg;base64,${secondImageBase64}`
+        }
+      });
+    } else {
+      userContent.push({
+        type: 'text',
+        text: 'Analyze this image and provide the requested analysis.'
+      });
+      userContent.push({
+        type: 'image_url',
+        image_url: {
+          url: imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`
+        }
+      });
+    }
+
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -119,18 +153,7 @@ serve(async (req) => {
           { role: 'system', content: systemPrompt },
           {
             role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: 'Analyze this image and provide the requested analysis.'
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`
-                }
-              }
-            ]
+            content: userContent
           }
         ],
       }),

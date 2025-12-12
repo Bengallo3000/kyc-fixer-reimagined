@@ -22,11 +22,13 @@ interface AnalysisResult {
 
 const ToolInterface = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [secondFile, setSecondFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [activeTab, setActiveTab] = useState("selfie");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [secondPreviewUrl, setSecondPreviewUrl] = useState<string | null>(null);
   const { toast } = useToast();
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -59,6 +61,19 @@ const ToolInterface = () => {
     setPreviewUrl(url);
   };
 
+  const handleSecondFileSelection = (file: File) => {
+    setSecondFile(file);
+    setAnalysisResult(null);
+    
+    const url = URL.createObjectURL(file);
+    setSecondPreviewUrl(url);
+  };
+
+  const handleSecondFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleSecondFileSelection(file);
+  };
+
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -70,15 +85,30 @@ const ToolInterface = () => {
 
   const handleProcess = async () => {
     if (!selectedFile) return;
+    
+    // For faceswap, require both images
+    if (activeTab === "faceswap" && !secondFile) {
+      toast({
+        title: "Second Image Required",
+        description: "Please upload a second image for face swap.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setIsProcessing(true);
     setAnalysisResult(null);
 
     try {
       const imageBase64 = await fileToBase64(selectedFile);
+      const secondImageBase64 = secondFile ? await fileToBase64(secondFile) : undefined;
 
       const { data, error } = await supabase.functions.invoke('process-image', {
-        body: { imageBase64, toolType: activeTab }
+        body: { 
+          imageBase64, 
+          secondImageBase64,
+          toolType: activeTab 
+        }
       });
 
       if (error) {
@@ -88,8 +118,10 @@ const ToolInterface = () => {
       if (data.success) {
         setAnalysisResult(data.analysis);
         toast({
-          title: "Analysis Complete",
-          description: `Your ${activeTab} analysis is ready.`,
+          title: activeTab === "faceswap" ? "Face Swap Complete" : "Analysis Complete",
+          description: activeTab === "faceswap" 
+            ? "Faces have been detected and swapped!" 
+            : `Your ${activeTab} analysis is ready.`,
         });
       } else {
         throw new Error(data.error || 'Processing failed');
@@ -108,12 +140,20 @@ const ToolInterface = () => {
 
   const clearSelection = () => {
     setSelectedFile(null);
+    setSecondFile(null);
     setAnalysisResult(null);
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl);
       setPreviewUrl(null);
     }
+    if (secondPreviewUrl) {
+      URL.revokeObjectURL(secondPreviewUrl);
+      setSecondPreviewUrl(null);
+    }
   };
+
+  const isFaceSwap = activeTab === "faceswap";
+  const canProcess = isFaceSwap ? (selectedFile && secondFile) : selectedFile;
 
   const renderAnalysisResult = () => {
     if (!analysisResult) return null;
@@ -174,7 +214,7 @@ const ToolInterface = () => {
                   {tab.id === "selfie" && "AI Selfie Analysis"}
                   {tab.id === "video" && "Video Generation Preview"}
                   {tab.id === "id" && "ID Document Analysis"}
-                  {tab.id === "faceswap" && "Face Swap Preparation"}
+                  {tab.id === "faceswap" && "AI Face Swap"}
                   {tab.id === "barcode" && "Barcode Detection"}
                   {tab.id === "pdf" && "PDF Document Analysis"}
                   {tab.id === "residence" && "Residence Verification"}
@@ -184,7 +224,7 @@ const ToolInterface = () => {
                   {tab.id === "selfie" && "Upload a photo to analyze selfie quality and extract facial features"}
                   {tab.id === "video" && "Upload a photo to analyze for AI video generation potential"}
                   {tab.id === "id" && "Upload an ID document to detect and analyze text fields"}
-                  {tab.id === "faceswap" && "Upload a face photo to prepare for face swap processing"}
+                  {tab.id === "faceswap" && "Upload two photos with faces to swap them automatically"}
                   {tab.id === "barcode" && "Upload an image to detect and decode barcodes/QR codes"}
                   {tab.id === "pdf" && "Upload a PDF or document image for AI-powered analysis"}
                   {tab.id === "residence" && "Upload proof of residence for address verification"}
@@ -225,15 +265,63 @@ const ToolInterface = () => {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {/* Image Preview */}
-                    {previewUrl && (
-                      <div className="relative rounded-xl overflow-hidden bg-secondary/30 p-4">
-                        <img 
-                          src={previewUrl} 
-                          alt="Preview" 
-                          className="max-h-64 mx-auto rounded-lg object-contain"
-                        />
+                    {/* Image Previews - Side by side for Face Swap */}
+                    {isFaceSwap ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* First Image */}
+                        <div className="relative rounded-xl overflow-hidden bg-secondary/30 p-4">
+                          <p className="text-xs text-primary font-medium mb-2 text-center">Source Face</p>
+                          {previewUrl && (
+                            <img 
+                              src={previewUrl} 
+                              alt="First face" 
+                              className="max-h-48 mx-auto rounded-lg object-contain"
+                            />
+                          )}
+                          <p className="text-xs text-muted-foreground mt-2 text-center truncate">{selectedFile.name}</p>
+                        </div>
+                        
+                        {/* Second Image or Upload Button */}
+                        {secondFile && secondPreviewUrl ? (
+                          <div className="relative rounded-xl overflow-hidden bg-secondary/30 p-4">
+                            <p className="text-xs text-primary font-medium mb-2 text-center">Target Face</p>
+                            <img 
+                              src={secondPreviewUrl} 
+                              alt="Second face" 
+                              className="max-h-48 mx-auto rounded-lg object-contain"
+                            />
+                            <p className="text-xs text-muted-foreground mt-2 text-center truncate">{secondFile.name}</p>
+                          </div>
+                        ) : (
+                          <div className="relative rounded-xl overflow-hidden border-2 border-dashed border-border hover:border-primary/50 p-4 flex flex-col items-center justify-center min-h-[200px] transition-colors">
+                            <Upload className="w-8 h-8 mb-2 text-muted-foreground" />
+                            <p className="text-sm text-muted-foreground mb-3 text-center">Upload second face</p>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleSecondFileSelect}
+                              className="hidden"
+                              id="second-file-upload"
+                            />
+                            <label htmlFor="second-file-upload">
+                              <Button variant="outline" size="sm" className="cursor-pointer" asChild>
+                                <span>Select Photo</span>
+                              </Button>
+                            </label>
+                          </div>
+                        )}
                       </div>
+                    ) : (
+                      /* Regular single image preview */
+                      previewUrl && (
+                        <div className="relative rounded-xl overflow-hidden bg-secondary/30 p-4">
+                          <img 
+                            src={previewUrl} 
+                            alt="Preview" 
+                            className="max-h-64 mx-auto rounded-lg object-contain"
+                          />
+                        </div>
+                      )
                     )}
                     
                     {/* File Info & Actions */}
@@ -243,9 +331,17 @@ const ToolInterface = () => {
                           <tab.icon className="w-5 h-5 text-primary" />
                         </div>
                         <div>
-                          <span className="text-sm font-medium block">{selectedFile.name}</span>
+                          <span className="text-sm font-medium block">
+                            {isFaceSwap 
+                              ? `${selectedFile.name}${secondFile ? ` + ${secondFile.name}` : ''}`
+                              : selectedFile.name
+                            }
+                          </span>
                           <span className="text-xs text-muted-foreground">
-                            {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                            {isFaceSwap 
+                              ? (secondFile ? "Both images ready" : "Waiting for second image...")
+                              : `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB`
+                            }
                           </span>
                         </div>
                       </div>
@@ -262,17 +358,17 @@ const ToolInterface = () => {
                           variant="hero" 
                           size="sm"
                           onClick={handleProcess}
-                          disabled={isProcessing}
+                          disabled={isProcessing || !canProcess}
                         >
                           {isProcessing ? (
                             <>
                               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                              Processing...
+                              {isFaceSwap ? "Swapping..." : "Processing..."}
                             </>
                           ) : (
                             <>
                               <Sparkles className="w-4 h-4 mr-2" />
-                              Analyze with AI
+                              {isFaceSwap ? "Swap Faces" : "Analyze with AI"}
                             </>
                           )}
                         </Button>
