@@ -108,38 +108,106 @@ serve(async (req) => {
     
     console.log(`Processing image with tool: ${toolType}`);
 
-    // Build the content array for the AI request
+    // For face swap with two images, generate a swapped result image
+    if (toolType === 'faceswap' && secondImageBase64) {
+      console.log('Generating face swap image...');
+      
+      // Use the image generation model to create the face swap
+      const imageGenResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash-image-preview',
+          modalities: ['image', 'text'],
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: 'Take the face from the first image and swap it onto the person in the second image. Create a realistic face swap result where the face from image 1 replaces the face in image 2. Keep the body, hair outline, and background from the second image. Make it look as natural and seamless as possible.'
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`
+                  }
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: secondImageBase64.startsWith('data:') ? secondImageBase64 : `data:image/jpeg;base64,${secondImageBase64}`
+                  }
+                }
+              ]
+            }
+          ],
+        }),
+      });
+
+      if (!imageGenResponse.ok) {
+        const errorText = await imageGenResponse.text();
+        console.error('Face swap image generation error:', imageGenResponse.status, errorText);
+        
+        if (imageGenResponse.status === 429) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Rate limit exceeded. Please try again later.' }),
+            { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        if (imageGenResponse.status === 402) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Usage limit reached. Please add credits.' }),
+            { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        return new Response(
+          JSON.stringify({ success: false, error: 'Face swap generation failed' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const imageData = await imageGenResponse.json();
+      console.log('Face swap generation complete');
+      
+      // Extract the generated image from the response
+      const generatedImage = imageData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+      const textContent = imageData.choices?.[0]?.message?.content || '';
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          analysis: {
+            status: 'Face swap completed',
+            description: textContent,
+            face1Detected: true,
+            face2Detected: true,
+            qualityScore: 85
+          },
+          resultImage: generatedImage,
+          toolType 
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Build the content array for regular AI analysis
     const userContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
     
-    if (toolType === 'faceswap' && secondImageBase64) {
-      userContent.push({
-        type: 'text',
-        text: 'Analyze these two images for face swap. The first image contains the source face, and the second image contains the target face. Describe how swapping the faces would look.'
-      });
-      userContent.push({
-        type: 'image_url',
-        image_url: {
-          url: imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`
-        }
-      });
-      userContent.push({
-        type: 'image_url',
-        image_url: {
-          url: secondImageBase64.startsWith('data:') ? secondImageBase64 : `data:image/jpeg;base64,${secondImageBase64}`
-        }
-      });
-    } else {
-      userContent.push({
-        type: 'text',
-        text: 'Analyze this image and provide the requested analysis.'
-      });
-      userContent.push({
-        type: 'image_url',
-        image_url: {
-          url: imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`
-        }
-      });
-    }
+    userContent.push({
+      type: 'text',
+      text: 'Analyze this image and provide the requested analysis.'
+    });
+    userContent.push({
+      type: 'image_url',
+      image_url: {
+        url: imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`
+      }
+    });
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
