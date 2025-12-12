@@ -1,10 +1,21 @@
-import { useState } from "react";
-import { Upload, Sparkles, Video, Type, Users, QrCode, FileText, FileCheck, Shield, Loader2, CheckCircle, AlertCircle, Download, Layers } from "lucide-react";
+import { useState, useRef, useCallback } from "react";
+import { Upload, Sparkles, Video, Type, Users, QrCode, FileText, FileCheck, Shield, Loader2, CheckCircle, AlertCircle, Download, Layers, Palette, ImagePlus } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+
+const COLOR_FILTERS = [
+  { id: 'none', label: 'Original', filter: '' },
+  { id: 'gold', label: 'Gold', filter: 'sepia(100%) saturate(300%) brightness(1.1) hue-rotate(-10deg)' },
+  { id: 'silver', label: 'Silver', filter: 'grayscale(100%) brightness(1.3) contrast(1.1)' },
+  { id: 'blue', label: 'Blue', filter: 'hue-rotate(200deg) saturate(150%)' },
+  { id: 'green', label: 'Green', filter: 'hue-rotate(90deg) saturate(150%)' },
+  { id: 'purple', label: 'Purple', filter: 'hue-rotate(270deg) saturate(150%)' },
+  { id: 'red', label: 'Red', filter: 'hue-rotate(340deg) saturate(200%)' },
+  { id: 'rainbow', label: 'Rainbow', filter: 'saturate(200%) contrast(1.2)' },
+];
 
 const toolTabs = [
   { id: "selfie", label: "Selfie Extractor", icon: Sparkles },
@@ -35,6 +46,11 @@ const ToolInterface = () => {
   const [secondPreviewUrl, setSecondPreviewUrl] = useState<string | null>(null);
   const [hologramOpacity, setHologramOpacity] = useState<number>(100);
   const [secondHologramOpacity, setSecondHologramOpacity] = useState<number>(100);
+  const [frontColorFilter, setFrontColorFilter] = useState<string>('none');
+  const [backColorFilter, setBackColorFilter] = useState<string>('none');
+  const [overlayImage, setOverlayImage] = useState<string | null>(null);
+  const [showOverlayPreview, setShowOverlayPreview] = useState(false);
+  const overlayInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -164,6 +180,10 @@ const ToolInterface = () => {
     setSecondResultImage(null);
     setHologramOpacity(100);
     setSecondHologramOpacity(100);
+    setFrontColorFilter('none');
+    setBackColorFilter('none');
+    setOverlayImage(null);
+    setShowOverlayPreview(false);
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl);
       setPreviewUrl(null);
@@ -173,6 +193,63 @@ const ToolInterface = () => {
       setSecondPreviewUrl(null);
     }
   };
+
+  const getColorFilter = (filterId: string) => {
+    return COLOR_FILTERS.find(f => f.id === filterId)?.filter || '';
+  };
+
+  const handleOverlayImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setOverlayImage(event.target?.result as string);
+        setShowOverlayPreview(true);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const downloadWithFilter = useCallback((imageUrl: string, filename: string, filter: string, opacity: number) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      ctx.filter = filter || 'none';
+      ctx.globalAlpha = opacity / 100;
+      ctx.drawImage(img, 0, 0);
+      
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        }
+      }, 'image/png');
+    };
+    img.src = imageUrl;
+  }, []);
+
+  const downloadBothSides = useCallback(() => {
+    if (resultImage) {
+      downloadWithFilter(resultImage, 'hologram-front.png', getColorFilter(frontColorFilter), hologramOpacity);
+    }
+    if (secondResultImage) {
+      setTimeout(() => {
+        downloadWithFilter(secondResultImage, 'hologram-back.png', getColorFilter(backColorFilter), secondHologramOpacity);
+      }, 500);
+    }
+  }, [resultImage, secondResultImage, frontColorFilter, backColorFilter, hologramOpacity, secondHologramOpacity, downloadWithFilter]);
 
   const downloadResultImage = (imageUrl: string, filename: string) => {
     if (!imageUrl) return;
@@ -198,23 +275,62 @@ const ToolInterface = () => {
       <div className="mt-6 space-y-6">
         {/* Hologram Extraction Results */}
         {isHologram && (resultImage || secondResultImage) && (
-          <div className="p-6 bg-gradient-to-br from-primary/10 to-secondary/30 rounded-xl border border-primary/30">
-            <div className="flex items-center gap-2 mb-4">
-              <CheckCircle className="w-5 h-5 text-primary" />
-              <h4 className="font-semibold">Extracted Holograms</h4>
+          <div className="p-6 bg-gradient-to-br from-primary/10 to-secondary/30 rounded-xl border border-primary/30 space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-primary" />
+                <h4 className="font-semibold">Extracted Holograms</h4>
+              </div>
+              {/* Download All Button */}
+              <div className="flex gap-2">
+                {resultImage && secondResultImage && (
+                  <Button variant="default" size="sm" onClick={downloadBothSides}>
+                    <Download className="w-4 h-4 mr-2" />
+                    Download Both
+                  </Button>
+                )}
+              </div>
             </div>
+
+            {/* Hologram Images Grid */}
             <div className={`grid gap-6 ${resultImage && secondResultImage ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
               {resultImage && (
                 <div className="space-y-4">
-                  <div className="rounded-lg overflow-hidden bg-[repeating-conic-gradient(#808080_0%_25%,#fff_0%_50%)] bg-[length:20px_20px] p-4">
-                    <p className="text-xs font-medium text-center mb-2 bg-background/80 rounded px-2 py-1 inline-block">Front Side Hologram</p>
+                  <div className="rounded-lg overflow-hidden bg-[repeating-conic-gradient(#808080_0%_25%,#fff_0%_50%)] bg-[length:20px_20px] p-4 relative">
+                    <p className="text-xs font-medium text-center mb-2 bg-background/80 rounded px-2 py-1 inline-block">Front Side</p>
                     <img 
                       src={resultImage} 
                       alt="Front hologram extraction" 
-                      className="max-h-64 mx-auto rounded-lg object-contain"
-                      style={{ opacity: hologramOpacity / 100 }}
+                      className="max-h-64 mx-auto rounded-lg object-contain transition-all"
+                      style={{ 
+                        opacity: hologramOpacity / 100,
+                        filter: getColorFilter(frontColorFilter)
+                      }}
                     />
                   </div>
+                  
+                  {/* Color Filter Buttons */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Palette className="w-4 h-4" />
+                      <span>Color Filter</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {COLOR_FILTERS.map((filter) => (
+                        <Button
+                          key={filter.id}
+                          variant={frontColorFilter === filter.id ? "default" : "outline"}
+                          size="sm"
+                          className="text-xs px-2 py-1 h-7"
+                          onClick={() => setFrontColorFilter(filter.id)}
+                        >
+                          {filter.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Transparency Slider */}
                   <div className="space-y-2 px-2">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Transparency</span>
@@ -229,25 +345,58 @@ const ToolInterface = () => {
                       className="w-full"
                     />
                   </div>
+                  
+                  {/* Download Button */}
                   <div className="flex justify-center">
-                    <Button variant="outline" size="sm" onClick={() => downloadResultImage(resultImage, 'hologram-front.png')}>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => downloadWithFilter(resultImage, 'hologram-front.png', getColorFilter(frontColorFilter), hologramOpacity)}
+                    >
                       <Download className="w-4 h-4 mr-2" />
                       Download Front
                     </Button>
                   </div>
                 </div>
               )}
+              
               {secondResultImage && (
                 <div className="space-y-4">
-                  <div className="rounded-lg overflow-hidden bg-[repeating-conic-gradient(#808080_0%_25%,#fff_0%_50%)] bg-[length:20px_20px] p-4">
-                    <p className="text-xs font-medium text-center mb-2 bg-background/80 rounded px-2 py-1 inline-block">Back Side Hologram</p>
+                  <div className="rounded-lg overflow-hidden bg-[repeating-conic-gradient(#808080_0%_25%,#fff_0%_50%)] bg-[length:20px_20px] p-4 relative">
+                    <p className="text-xs font-medium text-center mb-2 bg-background/80 rounded px-2 py-1 inline-block">Back Side</p>
                     <img 
                       src={secondResultImage} 
                       alt="Back hologram extraction" 
-                      className="max-h-64 mx-auto rounded-lg object-contain"
-                      style={{ opacity: secondHologramOpacity / 100 }}
+                      className="max-h-64 mx-auto rounded-lg object-contain transition-all"
+                      style={{ 
+                        opacity: secondHologramOpacity / 100,
+                        filter: getColorFilter(backColorFilter)
+                      }}
                     />
                   </div>
+                  
+                  {/* Color Filter Buttons */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Palette className="w-4 h-4" />
+                      <span>Color Filter</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {COLOR_FILTERS.map((filter) => (
+                        <Button
+                          key={filter.id}
+                          variant={backColorFilter === filter.id ? "default" : "outline"}
+                          size="sm"
+                          className="text-xs px-2 py-1 h-7"
+                          onClick={() => setBackColorFilter(filter.id)}
+                        >
+                          {filter.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Transparency Slider */}
                   <div className="space-y-2 px-2">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Transparency</span>
@@ -262,11 +411,87 @@ const ToolInterface = () => {
                       className="w-full"
                     />
                   </div>
+                  
+                  {/* Download Button */}
                   <div className="flex justify-center">
-                    <Button variant="outline" size="sm" onClick={() => downloadResultImage(secondResultImage, 'hologram-back.png')}>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => downloadWithFilter(secondResultImage, 'hologram-back.png', getColorFilter(backColorFilter), secondHologramOpacity)}
+                    >
                       <Download className="w-4 h-4 mr-2" />
                       Download Back
                     </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Overlay Section */}
+            <div className="border-t border-border pt-4 space-y-4">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <ImagePlus className="w-4 h-4 text-primary" />
+                <span>Apply as Overlay</span>
+              </div>
+              
+              <input
+                ref={overlayInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleOverlayImageSelect}
+                className="hidden"
+                id="overlay-upload"
+              />
+              
+              {!overlayImage ? (
+                <label htmlFor="overlay-upload">
+                  <Button variant="outline" size="sm" className="cursor-pointer" asChild>
+                    <span>
+                      <Upload className="w-4 h-4 mr-2" />
+                      Upload Background Image
+                    </span>
+                  </Button>
+                </label>
+              ) : (
+                <div className="space-y-4">
+                  <div className="rounded-lg overflow-hidden bg-background/50 p-4 relative">
+                    <p className="text-xs font-medium text-center mb-2 bg-background/80 rounded px-2 py-1 inline-block">Overlay Preview</p>
+                    <div className="relative max-h-80 mx-auto flex justify-center">
+                      <img 
+                        src={overlayImage} 
+                        alt="Background" 
+                        className="max-h-80 rounded-lg object-contain"
+                      />
+                      {resultImage && (
+                        <img 
+                          src={resultImage} 
+                          alt="Hologram overlay" 
+                          className="absolute inset-0 w-full h-full object-contain rounded-lg pointer-events-none"
+                          style={{ 
+                            opacity: hologramOpacity / 100,
+                            filter: getColorFilter(frontColorFilter),
+                            mixBlendMode: 'screen'
+                          }}
+                        />
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-center">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => {
+                        setOverlayImage(null);
+                        if (overlayInputRef.current) overlayInputRef.current.value = '';
+                      }}
+                    >
+                      Remove Background
+                    </Button>
+                    <label htmlFor="overlay-upload">
+                      <Button variant="outline" size="sm" className="cursor-pointer" asChild>
+                        <span>Change Background</span>
+                      </Button>
+                    </label>
                   </div>
                 </div>
               )}
