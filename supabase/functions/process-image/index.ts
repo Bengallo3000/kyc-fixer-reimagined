@@ -78,6 +78,17 @@ Respond in JSON format with keys: documentType, addressFields, dateFields, valid
 5. Overall KYC verification score
 
 Respond in JSON format with keys: documentType, personalInfo, biometrics, securityFeatures, kycScore`,
+
+  hologram: `You are an expert in ID document security features and hologram detection. Analyze this ID document image and:
+
+1. FIRST, identify the type of ID document (passport, driver's license, national ID, etc.) and the issuing country if possible
+2. Detect all hologram and security overlay areas on the document
+3. Identify the specific hologram patterns (kinegram, OVD, holographic strips, etc.)
+4. Note the position and shape of each hologram area
+5. Describe the colors and visual effects in the hologram areas
+6. Rate the visibility/clarity of the holograms (0-100)
+
+Respond in JSON format with keys: documentType, issuingCountry, hologramAreas (array with position, type, description), hologramPatterns, colorEffects, clarityScore, extractionDifficulty`,
 };
 
 serve(async (req) => {
@@ -189,6 +200,195 @@ serve(async (req) => {
             qualityScore: 85
           },
           resultImage: generatedImage,
+          toolType 
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // For hologram extraction
+    if (toolType === 'hologram') {
+      console.log('Processing hologram extraction...');
+      
+      // First, analyze the ID to detect hologram areas
+      const analysisContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
+        { type: 'text', text: 'Analyze this ID document and identify all hologram and security overlay areas.' }
+      ];
+      analysisContent.push({
+        type: 'image_url',
+        image_url: {
+          url: imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`
+        }
+      });
+      if (secondImageBase64) {
+        analysisContent.push({
+          type: 'image_url',
+          image_url: {
+            url: secondImageBase64.startsWith('data:') ? secondImageBase64 : `data:image/jpeg;base64,${secondImageBase64}`
+          }
+        });
+      }
+
+      // Get analysis first
+      const analysisResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: analysisContent }
+          ],
+        }),
+      });
+
+      if (!analysisResponse.ok) {
+        const errorText = await analysisResponse.text();
+        console.error('Hologram analysis error:', analysisResponse.status, errorText);
+        
+        if (analysisResponse.status === 429) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Rate limit exceeded. Please try again later.' }),
+            { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        if (analysisResponse.status === 402) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Usage limit reached. Please add credits.' }),
+            { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        return new Response(
+          JSON.stringify({ success: false, error: 'Hologram analysis failed' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const analysisData = await analysisResponse.json();
+      const analysisContent2 = analysisData.choices?.[0]?.message?.content || '';
+      
+      let analysisResult;
+      try {
+        const jsonMatch = analysisContent2.match(/```json\n?([\s\S]*?)\n?```/) || analysisContent2.match(/\{[\s\S]*\}/);
+        const jsonStr = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : analysisContent2;
+        analysisResult = JSON.parse(jsonStr);
+      } catch {
+        analysisResult = { rawAnalysis: analysisContent2 };
+      }
+
+      console.log('Hologram analysis complete, generating extraction image for front...');
+
+      // Generate hologram extraction image for front side
+      const frontExtractionResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash-image-preview',
+          modalities: ['image', 'text'],
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: 'Extract ONLY the hologram and security overlay patterns from this ID document image. Create a transparent PNG showing ONLY the hologram areas with their iridescent colors and patterns. The background must be completely transparent (alpha=0). Keep only the shiny, reflective hologram elements that show rainbow/iridescent effects. Remove all text, photos, and non-holographic elements. The result should look like an isolated hologram sticker on a transparent background.'
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`
+                  }
+                }
+              ]
+            }
+          ],
+        }),
+      });
+
+      if (!frontExtractionResponse.ok) {
+        const errorText = await frontExtractionResponse.text();
+        console.error('Front hologram extraction error:', frontExtractionResponse.status, errorText);
+        
+        if (frontExtractionResponse.status === 429) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Rate limit exceeded. Please try again later.' }),
+            { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        if (frontExtractionResponse.status === 402) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Usage limit reached. Please add credits.' }),
+            { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        return new Response(
+          JSON.stringify({ success: false, error: 'Hologram extraction failed' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const frontImageData = await frontExtractionResponse.json();
+      const frontResultImage = frontImageData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+      console.log('Front hologram extraction complete');
+
+      let backResultImage = null;
+
+      // If second image provided, extract holograms from back side too
+      if (secondImageBase64) {
+        console.log('Generating extraction image for back side...');
+        
+        const backExtractionResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'google/gemini-2.5-flash-image-preview',
+            modalities: ['image', 'text'],
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text: 'Extract ONLY the hologram and security overlay patterns from this ID document image (back side). Create a transparent PNG showing ONLY the hologram areas with their iridescent colors and patterns. The background must be completely transparent (alpha=0). Keep only the shiny, reflective hologram elements. Remove all text and non-holographic elements. The result should look like an isolated hologram sticker on a transparent background.'
+                  },
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: secondImageBase64.startsWith('data:') ? secondImageBase64 : `data:image/jpeg;base64,${secondImageBase64}`
+                    }
+                  }
+                ]
+              }
+            ],
+          }),
+        });
+
+        if (backExtractionResponse.ok) {
+          const backImageData = await backExtractionResponse.json();
+          backResultImage = backImageData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+          console.log('Back hologram extraction complete');
+        } else {
+          console.error('Back side extraction failed, continuing with front only');
+        }
+      }
+
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          analysis: analysisResult,
+          resultImage: frontResultImage,
+          secondResultImage: backResultImage,
           toolType 
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

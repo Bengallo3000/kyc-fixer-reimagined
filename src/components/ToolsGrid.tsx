@@ -1,4 +1,4 @@
-import { Sparkles, Video, Type, Users, Film, QrCode, FileText, FileCheck, Shield } from "lucide-react";
+import { Sparkles, Video, Type, Users, Film, QrCode, FileText, FileCheck, Shield, Layers } from "lucide-react";
 import ToolCard from "./ToolCard";
 
 const tools = [
@@ -57,6 +57,12 @@ const tools = [
     description: "Upload your ID, selfie and fill in details. Automated system verifies accounts using SumSub, Veriff and Onfido.",
     credits: "155 credits",
     isAutomated: true,
+  },
+  {
+    icon: Layers,
+    title: "Hologram Extractor",
+    description: "Extract hologram patterns from ID documents. AI detects and isolates security hologram areas as transparent PNG files.",
+    credits: "3 credits",
   },
 ];
 
