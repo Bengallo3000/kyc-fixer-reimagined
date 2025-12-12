@@ -1,0 +1,4 @@
+project_id = "pnylqzzwxuakuahldksw"
+
+[functions.process-image]
+verify_jwt = false

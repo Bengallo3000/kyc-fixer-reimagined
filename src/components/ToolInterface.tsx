@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { Upload, Sparkles, Video, Type, Users, QrCode, FileText, FileCheck, Shield } from "lucide-react";
+import { Upload, Sparkles, Video, Type, Users, QrCode, FileText, FileCheck, Shield, Loader2, CheckCircle, AlertCircle } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 const toolTabs = [
   { id: "selfie", label: "Selfie Extractor", icon: Sparkles },
@@ -14,9 +16,18 @@ const toolTabs = [
   { id: "kyc", label: "Full KYC", icon: Shield },
 ];
 
+interface AnalysisResult {
+  [key: string]: unknown;
+}
+
 const ToolInterface = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [activeTab, setActiveTab] = useState("selfie");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -31,18 +42,118 @@ const ToolInterface = () => {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files[0];
-    if (file) setSelectedFile(file);
+    if (file) handleFileSelection(file);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) setSelectedFile(file);
+    if (file) handleFileSelection(file);
+  };
+
+  const handleFileSelection = (file: File) => {
+    setSelectedFile(file);
+    setAnalysisResult(null);
+    
+    // Create preview URL
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+  };
+
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleProcess = async () => {
+    if (!selectedFile) return;
+
+    setIsProcessing(true);
+    setAnalysisResult(null);
+
+    try {
+      const imageBase64 = await fileToBase64(selectedFile);
+
+      const { data, error } = await supabase.functions.invoke('process-image', {
+        body: { imageBase64, toolType: activeTab }
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (data.success) {
+        setAnalysisResult(data.analysis);
+        toast({
+          title: "Analysis Complete",
+          description: `Your ${activeTab} analysis is ready.`,
+        });
+      } else {
+        throw new Error(data.error || 'Processing failed');
+      }
+    } catch (error) {
+      console.error('Processing error:', error);
+      toast({
+        title: "Processing Failed",
+        description: error instanceof Error ? error.message : "Something went wrong. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedFile(null);
+    setAnalysisResult(null);
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
+  };
+
+  const renderAnalysisResult = () => {
+    if (!analysisResult) return null;
+
+    return (
+      <div className="mt-6 p-6 bg-secondary/30 rounded-xl border border-border">
+        <div className="flex items-center gap-2 mb-4">
+          <CheckCircle className="w-5 h-5 text-primary" />
+          <h4 className="font-semibold">AI Analysis Results</h4>
+        </div>
+        <div className="space-y-3">
+          {Object.entries(analysisResult).map(([key, value]) => (
+            <div key={key} className="flex flex-col gap-1">
+              <span className="text-sm font-medium text-primary capitalize">
+                {key.replace(/([A-Z])/g, ' $1').trim()}
+              </span>
+              <span className="text-sm text-muted-foreground">
+                {typeof value === 'object' 
+                  ? JSON.stringify(value, null, 2) 
+                  : String(value)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   return (
     <section className="py-16 px-4">
       <div className="container mx-auto max-w-4xl">
-        <Tabs defaultValue="selfie" className="w-full">
+        <Tabs 
+          defaultValue="selfie" 
+          value={activeTab}
+          onValueChange={(value) => {
+            setActiveTab(value);
+            clearSelection();
+          }}
+          className="w-full"
+        >
           <TabsList className="w-full h-auto flex-wrap gap-2 bg-secondary/30 p-2 rounded-xl mb-8">
             {toolTabs.map((tab) => (
               <TabsTrigger
@@ -59,54 +170,117 @@ const ToolInterface = () => {
           {toolTabs.map((tab) => (
             <TabsContent key={tab.id} value={tab.id}>
               <div className="glass-card p-8">
-                <h3 className="text-xl font-semibold mb-2">Upload Your Photo</h3>
+                <h3 className="text-xl font-semibold mb-2">
+                  {tab.id === "selfie" && "AI Selfie Analysis"}
+                  {tab.id === "video" && "Video Generation Preview"}
+                  {tab.id === "id" && "ID Document Analysis"}
+                  {tab.id === "faceswap" && "Face Swap Preparation"}
+                  {tab.id === "barcode" && "Barcode Detection"}
+                  {tab.id === "pdf" && "PDF Document Analysis"}
+                  {tab.id === "residence" && "Residence Verification"}
+                  {tab.id === "kyc" && "KYC Verification"}
+                </h3>
                 <p className="text-muted-foreground text-sm mb-6">
-                  {tab.id === "selfie" && "Upload a photo to extract or generate a professional selfie"}
-                  {tab.id === "video" && "Upload a photo to create an animated video clip"}
-                  {tab.id === "id" && "Upload an ID document to edit text fields"}
-                  {tab.id === "faceswap" && "Upload two photos to swap faces between them"}
-                  {tab.id === "barcode" && "Upload an image to edit or replace barcodes"}
-                  {tab.id === "pdf" && "Upload a PDF document for AI-powered text editing"}
-                  {tab.id === "residence" && "Generate proof of residence documents"}
-                  {tab.id === "kyc" && "Complete KYC verification with ID and selfie"}
+                  {tab.id === "selfie" && "Upload a photo to analyze selfie quality and extract facial features"}
+                  {tab.id === "video" && "Upload a photo to analyze for AI video generation potential"}
+                  {tab.id === "id" && "Upload an ID document to detect and analyze text fields"}
+                  {tab.id === "faceswap" && "Upload a face photo to prepare for face swap processing"}
+                  {tab.id === "barcode" && "Upload an image to detect and decode barcodes/QR codes"}
+                  {tab.id === "pdf" && "Upload a PDF or document image for AI-powered analysis"}
+                  {tab.id === "residence" && "Upload proof of residence for address verification"}
+                  {tab.id === "kyc" && "Upload ID documents for comprehensive KYC verification"}
                 </p>
                 
-                <div
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  className={`border-2 border-dashed rounded-xl p-12 text-center transition-all duration-300 ${
-                    isDragging
-                      ? "border-primary bg-primary/10"
-                      : "border-border hover:border-muted-foreground"
-                  }`}
-                >
-                  <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground mb-2">
-                    Drag and drop your image here, or click to browse
-                  </p>
-                  <p className="text-sm text-muted-foreground mb-6">
-                    JPG, PNG • Max 10MB
-                  </p>
-                  
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                    id="file-upload"
-                  />
-                  <label htmlFor="file-upload">
-                    <Button variant="outline" className="cursor-pointer" asChild>
-                      <span>Select Photo</span>
-                    </Button>
-                  </label>
-                </div>
-                
-                {selectedFile && (
-                  <div className="mt-4 p-4 bg-secondary/50 rounded-lg flex items-center justify-between">
-                    <span className="text-sm">{selectedFile.name}</span>
-                    <Button variant="hero" size="sm">Process</Button>
+                {!selectedFile ? (
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    className={`border-2 border-dashed rounded-xl p-12 text-center transition-all duration-300 ${
+                      isDragging
+                        ? "border-primary bg-primary/10"
+                        : "border-border hover:border-muted-foreground"
+                    }`}
+                  >
+                    <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-muted-foreground mb-2">
+                      Drag and drop your image here, or click to browse
+                    </p>
+                    <p className="text-sm text-muted-foreground mb-6">
+                      JPG, PNG • Max 10MB
+                    </p>
+                    
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                      id={`file-upload-${tab.id}`}
+                    />
+                    <label htmlFor={`file-upload-${tab.id}`}>
+                      <Button variant="outline" className="cursor-pointer" asChild>
+                        <span>Select Photo</span>
+                      </Button>
+                    </label>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Image Preview */}
+                    {previewUrl && (
+                      <div className="relative rounded-xl overflow-hidden bg-secondary/30 p-4">
+                        <img 
+                          src={previewUrl} 
+                          alt="Preview" 
+                          className="max-h-64 mx-auto rounded-lg object-contain"
+                        />
+                      </div>
+                    )}
+                    
+                    {/* File Info & Actions */}
+                    <div className="p-4 bg-secondary/50 rounded-lg flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-primary/20 rounded-lg">
+                          <tab.icon className="w-5 h-5 text-primary" />
+                        </div>
+                        <div>
+                          <span className="text-sm font-medium block">{selectedFile.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={clearSelection}
+                          disabled={isProcessing}
+                        >
+                          Clear
+                        </Button>
+                        <Button 
+                          variant="hero" 
+                          size="sm"
+                          onClick={handleProcess}
+                          disabled={isProcessing}
+                        >
+                          {isProcessing ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Processing...
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-4 h-4 mr-2" />
+                              Analyze with AI
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Analysis Results */}
+                    {renderAnalysisResult()}
                   </div>
                 )}
               </div>
