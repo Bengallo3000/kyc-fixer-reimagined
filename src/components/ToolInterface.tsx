@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Upload, Sparkles, Video, Type, Users, QrCode, FileText, FileCheck, Shield, Loader2, CheckCircle, AlertCircle, Download } from "lucide-react";
+import { Upload, Sparkles, Video, Type, Users, QrCode, FileText, FileCheck, Shield, Loader2, CheckCircle, AlertCircle, Download, Layers } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -14,6 +14,7 @@ const toolTabs = [
   { id: "pdf", label: "PDF", icon: FileText },
   { id: "residence", label: "Proof of Residence", icon: FileCheck },
   { id: "kyc", label: "Full KYC", icon: Shield },
+  { id: "hologram", label: "Hologram Extractor", icon: Layers },
 ];
 
 interface AnalysisResult {
@@ -27,6 +28,7 @@ const ToolInterface = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [resultImage, setResultImage] = useState<string | null>(null);
+  const [secondResultImage, setSecondResultImage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("selfie");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [secondPreviewUrl, setSecondPreviewUrl] = useState<string | null>(null);
@@ -97,9 +99,12 @@ const ToolInterface = () => {
       return;
     }
 
+    // For hologram, second image is optional - handled in the edge function
+
     setIsProcessing(true);
     setAnalysisResult(null);
     setResultImage(null);
+    setSecondResultImage(null);
 
     try {
       const imageBase64 = await fileToBase64(selectedFile);
@@ -122,10 +127,15 @@ const ToolInterface = () => {
         if (data.resultImage) {
           setResultImage(data.resultImage);
         }
+        if (data.secondResultImage) {
+          setSecondResultImage(data.secondResultImage);
+        }
         toast({
-          title: activeTab === "faceswap" ? "Face Swap Complete" : "Analysis Complete",
+          title: activeTab === "faceswap" ? "Face Swap Complete" : activeTab === "hologram" ? "Hologram Extraction Complete" : "Analysis Complete",
           description: activeTab === "faceswap" 
             ? "Faces have been detected and swapped!" 
+            : activeTab === "hologram"
+            ? "Holograms have been extracted as transparent PNG!"
             : `Your ${activeTab} analysis is ready.`,
         });
       } else {
@@ -148,6 +158,7 @@ const ToolInterface = () => {
     setSecondFile(null);
     setAnalysisResult(null);
     setResultImage(null);
+    setSecondResultImage(null);
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl);
       setPreviewUrl(null);
@@ -158,24 +169,72 @@ const ToolInterface = () => {
     }
   };
 
-  const downloadResultImage = () => {
-    if (!resultImage) return;
+  const downloadResultImage = (imageUrl: string, filename: string) => {
+    if (!imageUrl) return;
     const link = document.createElement('a');
-    link.href = resultImage;
-    link.download = 'face-swap-result.png';
+    link.href = imageUrl;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
+  const isHologram = activeTab === "hologram";
+
   const isFaceSwap = activeTab === "faceswap";
-  const canProcess = isFaceSwap ? (selectedFile && secondFile) : selectedFile;
+  const needsTwoImages = isFaceSwap;
+  const optionalSecondImage = isHologram;
+  const canProcess = needsTwoImages ? (selectedFile && secondFile) : selectedFile;
 
   const renderAnalysisResult = () => {
-    if (!analysisResult && !resultImage) return null;
+    if (!analysisResult && !resultImage && !secondResultImage) return null;
 
     return (
       <div className="mt-6 space-y-6">
+        {/* Hologram Extraction Results */}
+        {isHologram && (resultImage || secondResultImage) && (
+          <div className="p-6 bg-gradient-to-br from-primary/10 to-secondary/30 rounded-xl border border-primary/30">
+            <div className="flex items-center gap-2 mb-4">
+              <CheckCircle className="w-5 h-5 text-primary" />
+              <h4 className="font-semibold">Extracted Holograms</h4>
+            </div>
+            <div className={`grid gap-4 ${resultImage && secondResultImage ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
+              {resultImage && (
+                <div className="rounded-lg overflow-hidden bg-[repeating-conic-gradient(#808080_0%_25%,#fff_0%_50%)] bg-[length:20px_20px] p-4">
+                  <p className="text-xs font-medium text-center mb-2 bg-background/80 rounded px-2 py-1 inline-block">Front Side Hologram</p>
+                  <img 
+                    src={resultImage} 
+                    alt="Front hologram extraction" 
+                    className="max-h-64 mx-auto rounded-lg object-contain"
+                  />
+                  <div className="mt-3 flex justify-center">
+                    <Button variant="outline" size="sm" onClick={() => downloadResultImage(resultImage, 'hologram-front.png')}>
+                      <Download className="w-4 h-4 mr-2" />
+                      Download Front
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {secondResultImage && (
+                <div className="rounded-lg overflow-hidden bg-[repeating-conic-gradient(#808080_0%_25%,#fff_0%_50%)] bg-[length:20px_20px] p-4">
+                  <p className="text-xs font-medium text-center mb-2 bg-background/80 rounded px-2 py-1 inline-block">Back Side Hologram</p>
+                  <img 
+                    src={secondResultImage} 
+                    alt="Back hologram extraction" 
+                    className="max-h-64 mx-auto rounded-lg object-contain"
+                  />
+                  <div className="mt-3 flex justify-center">
+                    <Button variant="outline" size="sm" onClick={() => downloadResultImage(secondResultImage, 'hologram-back.png')}>
+                      <Download className="w-4 h-4 mr-2" />
+                      Download Back
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Face Swap Result Image */}
         {resultImage && isFaceSwap && (
           <div className="p-6 bg-gradient-to-br from-primary/10 to-secondary/30 rounded-xl border border-primary/30">
@@ -184,7 +243,7 @@ const ToolInterface = () => {
                 <CheckCircle className="w-5 h-5 text-primary" />
                 <h4 className="font-semibold">Face Swap Result</h4>
               </div>
-              <Button variant="outline" size="sm" onClick={downloadResultImage}>
+              <Button variant="outline" size="sm" onClick={() => downloadResultImage(resultImage, 'face-swap-result.png')}>
                 <Download className="w-4 h-4 mr-2" />
                 Download
               </Button>
@@ -204,7 +263,7 @@ const ToolInterface = () => {
           <div className="p-6 bg-secondary/30 rounded-xl border border-border">
             <div className="flex items-center gap-2 mb-4">
               <CheckCircle className="w-5 h-5 text-primary" />
-              <h4 className="font-semibold">{isFaceSwap ? "Swap Details" : "AI Analysis Results"}</h4>
+              <h4 className="font-semibold">{isFaceSwap ? "Swap Details" : isHologram ? "ID & Hologram Analysis" : "AI Analysis Results"}</h4>
             </div>
             <div className="space-y-3">
               {Object.entries(analysisResult).map(([key, value]) => (
@@ -263,6 +322,7 @@ const ToolInterface = () => {
                   {tab.id === "pdf" && "PDF Document Analysis"}
                   {tab.id === "residence" && "Residence Verification"}
                   {tab.id === "kyc" && "KYC Verification"}
+                  {tab.id === "hologram" && "AI Hologram Extraction"}
                 </h3>
                 <p className="text-muted-foreground text-sm mb-6">
                   {tab.id === "selfie" && "Upload a photo to analyze selfie quality and extract facial features"}
@@ -273,6 +333,7 @@ const ToolInterface = () => {
                   {tab.id === "pdf" && "Upload a PDF or document image for AI-powered analysis"}
                   {tab.id === "residence" && "Upload proof of residence for address verification"}
                   {tab.id === "kyc" && "Upload ID documents for comprehensive KYC verification"}
+                  {tab.id === "hologram" && "Upload an ID document to extract hologram patterns as transparent PNG"}
                 </p>
                 
                 {!selectedFile ? (
@@ -355,6 +416,51 @@ const ToolInterface = () => {
                           </div>
                         )}
                       </div>
+                    ) : isHologram ? (
+                      /* Hologram: show first image with optional second */
+                      <div className="space-y-4">
+                        <div className="relative rounded-xl overflow-hidden bg-secondary/30 p-4">
+                          <p className="text-xs text-primary font-medium mb-2 text-center">ID Front Side</p>
+                          {previewUrl && (
+                            <img 
+                              src={previewUrl} 
+                              alt="ID Front" 
+                              className="max-h-48 mx-auto rounded-lg object-contain"
+                            />
+                          )}
+                          <p className="text-xs text-muted-foreground mt-2 text-center truncate">{selectedFile.name}</p>
+                        </div>
+                        
+                        {/* Optional second image for back side */}
+                        {secondFile && secondPreviewUrl ? (
+                          <div className="relative rounded-xl overflow-hidden bg-secondary/30 p-4">
+                            <p className="text-xs text-primary font-medium mb-2 text-center">ID Back Side (Optional)</p>
+                            <img 
+                              src={secondPreviewUrl} 
+                              alt="ID Back" 
+                              className="max-h-48 mx-auto rounded-lg object-contain"
+                            />
+                            <p className="text-xs text-muted-foreground mt-2 text-center truncate">{secondFile.name}</p>
+                          </div>
+                        ) : (
+                          <div className="relative rounded-xl overflow-hidden border-2 border-dashed border-border hover:border-primary/50 p-4 flex flex-col items-center justify-center transition-colors">
+                            <Upload className="w-6 h-6 mb-2 text-muted-foreground" />
+                            <p className="text-sm text-muted-foreground mb-2 text-center">Upload back side (optional)</p>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleSecondFileSelect}
+                              className="hidden"
+                              id="hologram-second-file-upload"
+                            />
+                            <label htmlFor="hologram-second-file-upload">
+                              <Button variant="outline" size="sm" className="cursor-pointer" asChild>
+                                <span>Add Back Side</span>
+                              </Button>
+                            </label>
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       /* Regular single image preview */
                       previewUrl && (
@@ -376,7 +482,7 @@ const ToolInterface = () => {
                         </div>
                         <div>
                           <span className="text-sm font-medium block">
-                            {isFaceSwap 
+                            {(isFaceSwap || isHologram)
                               ? `${selectedFile.name}${secondFile ? ` + ${secondFile.name}` : ''}`
                               : selectedFile.name
                             }
@@ -384,6 +490,8 @@ const ToolInterface = () => {
                           <span className="text-xs text-muted-foreground">
                             {isFaceSwap 
                               ? (secondFile ? "Both images ready" : "Waiting for second image...")
+                              : isHologram
+                              ? (secondFile ? "Front & back ready" : "Front side ready (back optional)")
                               : `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB`
                             }
                           </span>
@@ -407,12 +515,12 @@ const ToolInterface = () => {
                           {isProcessing ? (
                             <>
                               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                              {isFaceSwap ? "Swapping..." : "Processing..."}
+                              {isFaceSwap ? "Swapping..." : isHologram ? "Extracting..." : "Processing..."}
                             </>
                           ) : (
                             <>
                               <Sparkles className="w-4 h-4 mr-2" />
-                              {isFaceSwap ? "Swap Faces" : "Analyze with AI"}
+                              {isFaceSwap ? "Swap Faces" : isHologram ? "Extract Holograms" : "Analyze with AI"}
                             </>
                           )}
                         </Button>
