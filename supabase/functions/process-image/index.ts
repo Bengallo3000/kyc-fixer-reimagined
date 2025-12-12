@@ -82,10 +82,10 @@ Respond in JSON format with keys: documentType, personalInfo, biometrics, securi
   hologram: `You are an expert in ID document security features and hologram detection. Analyze this ID document image and:
 
 1. FIRST, identify the type of ID document (passport, driver's license, national ID, etc.) and the issuing country if possible
-2. Detect all hologram and security overlay areas on the document
-3. Identify the specific hologram patterns (kinegram, OVD, holographic strips, etc.)
-4. Note the position and shape of each hologram area
-5. Describe the colors and visual effects in the hologram areas
+2. Detect all hologram and security overlay areas on the document (these are the shiny, iridescent, rainbow-colored elements)
+3. Identify the specific hologram patterns (kinegram, OVD, holographic strips, holographic seals, etc.)
+4. Note the exact position and shape of each hologram area
+5. Describe the colors and visual effects in the hologram areas (rainbow, metallic, color-shifting)
 6. Rate the visibility/clarity of the holograms (0-100)
 
 Respond in JSON format with keys: documentType, issuingCountry, hologramAreas (array with position, type, description), hologramPatterns, colorEffects, clarityScore, extractionDifficulty`,
@@ -298,7 +298,22 @@ serve(async (req) => {
               content: [
                 {
                   type: 'text',
-                  text: 'Extract ONLY the hologram and security overlay patterns from this ID document image. Create a transparent PNG showing ONLY the hologram areas with their iridescent colors and patterns. The background must be completely transparent (alpha=0). Keep only the shiny, reflective hologram elements that show rainbow/iridescent effects. Remove all text, photos, and non-holographic elements. The result should look like an isolated hologram sticker on a transparent background.'
+                  text: `IMPORTANT: Create a transparent PNG image showing ONLY the hologram security features extracted from this ID document.
+
+REMOVE COMPLETELY:
+- The person's photo/portrait
+- All text (name, date of birth, ID numbers, addresses)
+- The document background
+- Any non-holographic elements
+
+KEEP ONLY:
+- Holographic overlay patterns (the shiny, rainbow-colored security elements)
+- Holographic seals and emblems
+- Iridescent strips and bands
+- Kinegrams and OVD elements
+- Any color-shifting metallic security features
+
+The result must be a transparent PNG where ONLY the hologram patterns are visible floating on a completely transparent background. The holograms should retain their original colors (rainbow, metallic, iridescent effects).`
                 },
                 {
                   type: 'image_url',
@@ -357,10 +372,24 @@ serve(async (req) => {
             messages: [
               {
                 role: 'user',
-                content: [
+              content: [
                   {
                     type: 'text',
-                    text: 'Extract ONLY the hologram and security overlay patterns from this ID document image (back side). Create a transparent PNG showing ONLY the hologram areas with their iridescent colors and patterns. The background must be completely transparent (alpha=0). Keep only the shiny, reflective hologram elements. Remove all text and non-holographic elements. The result should look like an isolated hologram sticker on a transparent background.'
+                    text: `IMPORTANT: Create a transparent PNG image showing ONLY the hologram security features extracted from this ID document (BACK SIDE).
+
+REMOVE COMPLETELY:
+- All text (barcodes, machine readable zones, addresses, numbers)
+- The document background
+- Any non-holographic elements
+
+KEEP ONLY:
+- Holographic overlay patterns (the shiny, rainbow-colored security elements)
+- Holographic seals and emblems
+- Iridescent strips and bands
+- Kinegrams and OVD elements
+- Any color-shifting metallic security features
+
+The result must be a transparent PNG where ONLY the hologram patterns are visible floating on a completely transparent background.`
                   },
                   {
                     type: 'image_url',

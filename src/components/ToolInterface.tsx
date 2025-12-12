@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Upload, Sparkles, Video, Type, Users, QrCode, FileText, FileCheck, Shield, Loader2, CheckCircle, AlertCircle, Download, Layers } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -32,6 +33,8 @@ const ToolInterface = () => {
   const [activeTab, setActiveTab] = useState("selfie");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [secondPreviewUrl, setSecondPreviewUrl] = useState<string | null>(null);
+  const [hologramOpacity, setHologramOpacity] = useState<number>(100);
+  const [secondHologramOpacity, setSecondHologramOpacity] = useState<number>(100);
   const { toast } = useToast();
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -159,6 +162,8 @@ const ToolInterface = () => {
     setAnalysisResult(null);
     setResultImage(null);
     setSecondResultImage(null);
+    setHologramOpacity(100);
+    setSecondHologramOpacity(100);
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl);
       setPreviewUrl(null);
@@ -198,16 +203,33 @@ const ToolInterface = () => {
               <CheckCircle className="w-5 h-5 text-primary" />
               <h4 className="font-semibold">Extracted Holograms</h4>
             </div>
-            <div className={`grid gap-4 ${resultImage && secondResultImage ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
+            <div className={`grid gap-6 ${resultImage && secondResultImage ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
               {resultImage && (
-                <div className="rounded-lg overflow-hidden bg-[repeating-conic-gradient(#808080_0%_25%,#fff_0%_50%)] bg-[length:20px_20px] p-4">
-                  <p className="text-xs font-medium text-center mb-2 bg-background/80 rounded px-2 py-1 inline-block">Front Side Hologram</p>
-                  <img 
-                    src={resultImage} 
-                    alt="Front hologram extraction" 
-                    className="max-h-64 mx-auto rounded-lg object-contain"
-                  />
-                  <div className="mt-3 flex justify-center">
+                <div className="space-y-4">
+                  <div className="rounded-lg overflow-hidden bg-[repeating-conic-gradient(#808080_0%_25%,#fff_0%_50%)] bg-[length:20px_20px] p-4">
+                    <p className="text-xs font-medium text-center mb-2 bg-background/80 rounded px-2 py-1 inline-block">Front Side Hologram</p>
+                    <img 
+                      src={resultImage} 
+                      alt="Front hologram extraction" 
+                      className="max-h-64 mx-auto rounded-lg object-contain"
+                      style={{ opacity: hologramOpacity / 100 }}
+                    />
+                  </div>
+                  <div className="space-y-2 px-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Transparency</span>
+                      <span className="text-primary font-medium">{100 - hologramOpacity}%</span>
+                    </div>
+                    <Slider
+                      value={[hologramOpacity]}
+                      onValueChange={(value) => setHologramOpacity(value[0])}
+                      min={10}
+                      max={100}
+                      step={5}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="flex justify-center">
                     <Button variant="outline" size="sm" onClick={() => downloadResultImage(resultImage, 'hologram-front.png')}>
                       <Download className="w-4 h-4 mr-2" />
                       Download Front
@@ -216,14 +238,31 @@ const ToolInterface = () => {
                 </div>
               )}
               {secondResultImage && (
-                <div className="rounded-lg overflow-hidden bg-[repeating-conic-gradient(#808080_0%_25%,#fff_0%_50%)] bg-[length:20px_20px] p-4">
-                  <p className="text-xs font-medium text-center mb-2 bg-background/80 rounded px-2 py-1 inline-block">Back Side Hologram</p>
-                  <img 
-                    src={secondResultImage} 
-                    alt="Back hologram extraction" 
-                    className="max-h-64 mx-auto rounded-lg object-contain"
-                  />
-                  <div className="mt-3 flex justify-center">
+                <div className="space-y-4">
+                  <div className="rounded-lg overflow-hidden bg-[repeating-conic-gradient(#808080_0%_25%,#fff_0%_50%)] bg-[length:20px_20px] p-4">
+                    <p className="text-xs font-medium text-center mb-2 bg-background/80 rounded px-2 py-1 inline-block">Back Side Hologram</p>
+                    <img 
+                      src={secondResultImage} 
+                      alt="Back hologram extraction" 
+                      className="max-h-64 mx-auto rounded-lg object-contain"
+                      style={{ opacity: secondHologramOpacity / 100 }}
+                    />
+                  </div>
+                  <div className="space-y-2 px-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Transparency</span>
+                      <span className="text-primary font-medium">{100 - secondHologramOpacity}%</span>
+                    </div>
+                    <Slider
+                      value={[secondHologramOpacity]}
+                      onValueChange={(value) => setSecondHologramOpacity(value[0])}
+                      min={10}
+                      max={100}
+                      step={5}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="flex justify-center">
                     <Button variant="outline" size="sm" onClick={() => downloadResultImage(secondResultImage, 'hologram-back.png')}>
                       <Download className="w-4 h-4 mr-2" />
                       Download Back
